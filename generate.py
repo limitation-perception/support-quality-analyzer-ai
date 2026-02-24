@@ -41,10 +41,6 @@ def generate_chat_for_case(case_data):
     """
 
     try:
-<<<<<<< HEAD
-        # Використовуємо новий метод виклику з types.GenerateContentConfig
-=======
->>>>>>> 9268d51 (Finished file generate.py)
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -59,10 +55,6 @@ def generate_chat_for_case(case_data):
         return []
 
 def main():
-<<<<<<< HEAD
-    # ТУТ ПОВИНЕН БУТИ ТВІЙ СПИСОК JSON (я скоротив для прикладу, встав сюди свій повний список)
-=======
->>>>>>> 9268d51 (Finished file generate.py)
     test_cases = [
       {
         "case_id": "CS001",
