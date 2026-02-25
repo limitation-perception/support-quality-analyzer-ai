@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# Завантаження .env з кореневої папки (на рівень вище)
+
 load_dotenv()
 
 api_key = os.getenv("API_KEY")
@@ -101,5 +101,4 @@ def reader(file, output_file='analyzed_results.json'):
 
 
 if __name__ == "__main__":
-    # Вказуємо шлях до згенерованого датасету
     reader('support_dataset.json')
