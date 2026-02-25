@@ -52,12 +52,6 @@ def generate_all_chats(test_cases):
     """
 
     try:
-<<<<<<< HEAD
-        # Примітка: для обробки великого масиву інструкцій за один раз 
-        # іноді краще справляється gemini-2.5-flash замість lite. 
-        # Але поки залишаємо lite, як було у вашому коді.
-=======
->>>>>>> 560561a75f4f467a4a5729885836003e1a7a6f72
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=prompt,
@@ -72,10 +66,6 @@ def generate_all_chats(test_cases):
         return []
 
 def main():
-<<<<<<< HEAD
-
-=======
->>>>>>> 560561a75f4f467a4a5729885836003e1a7a6f72
     test_cases = [
       {
         "case_id": "CS001",
@@ -199,15 +189,12 @@ def main():
     print(f"Починаємо генерацію датасету. Кількість кейсів: {len(test_cases)}")
     print("Відправляємо єдиний запит до API... Це може зайняти кілька десятків секунд.")
     
-    # Отримуємо всі згенеровані діалоги за один раз
     generated_responses = generate_all_chats(test_cases)
     
     final_dataset = []
 
-    # Співставляємо згенеровані діалоги з початковими метаданими
     for case in test_cases:
         transcript = []
-        # Шукаємо відповідний згенерований діалог за case_id
         for response_data in generated_responses:
             if response_data.get("case_id") == case["case_id"]:
                 transcript = response_data.get("chat_transcript", [])
