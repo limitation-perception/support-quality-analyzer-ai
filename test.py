@@ -16,7 +16,6 @@ def generate(i):
     result['quality_score'] = random.randint(1,5)
     k = random.randint(0, 3)
     result['agent_mistakes'] = [random.choice(agent_mistakes) for n in range(k)]
-    print(result)
     file_name = f"{i}.json"
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=4)  
@@ -93,7 +92,7 @@ def result_check(i):
 
 n = 4
 for i in range(1,n+1):
-    generate(i,"message")
+    generate(i)
     result_check(i)
 
 
