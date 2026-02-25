@@ -6,7 +6,6 @@ from google.genai import types
 
 load_dotenv()
 
-# Налаштування клієнта Gemini
 api_key = os.getenv("API_KEY")
 if not api_key:
     raise ValueError("Не знайдено API_KEY. Будь ласка, створіть файл .env та додайте туди ключ.")
@@ -57,7 +56,7 @@ def generate_all_chats(test_cases):
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.0 # Трохи підняв температуру для більш природних діалогів, але залишив низькою для збереження структури
+                temperature=0.0
             )
         )
         return json.loads(response.text)
