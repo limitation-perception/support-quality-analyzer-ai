@@ -1,5 +1,9 @@
 import json
 import random
+from pathlib import Path
+
+output_dir = Path("output")
+output_dir.mkdir(exist_ok=True)
 
 def generate(i):
     result = {}
@@ -83,9 +87,9 @@ def result_check(i):
     with open(f'{i}.json', 'r', encoding='utf-8') as file:
         data = json.load(file)
     resul = evaluate_record(data, i)
-    file_name = f"{i}.json"
+    file_name = output_dir / f"{i}.json"
     with open(file_name, "w", encoding="utf-8") as f:
-        json.dump(resul, f, indent=4)  
+        json.dump(resul, f, ensure_ascii=False, indent=4)  
 
 n = 4
 for i in range(1,n+1):
