@@ -52,9 +52,12 @@ def generate_all_chats(test_cases):
     """
 
     try:
+<<<<<<< HEAD
         # Примітка: для обробки великого масиву інструкцій за один раз 
         # іноді краще справляється gemini-2.5-flash замість lite. 
         # Але поки залишаємо lite, як було у вашому коді.
+=======
+>>>>>>> 560561a75f4f467a4a5729885836003e1a7a6f72
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=prompt,
@@ -69,7 +72,10 @@ def generate_all_chats(test_cases):
         return []
 
 def main():
+<<<<<<< HEAD
 
+=======
+>>>>>>> 560561a75f4f467a4a5729885836003e1a7a6f72
     test_cases = [
       {
         "case_id": "CS001",
