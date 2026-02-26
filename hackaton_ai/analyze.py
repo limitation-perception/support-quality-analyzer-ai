@@ -1,6 +1,5 @@
 import json
 import os
-import time
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
@@ -25,37 +24,76 @@ RULES = {
 
 
 def analyze_with_llm(dataset):
-    full_text_to_analyze = ""
+
+    # мінімальна чистка повідомлень
+    def cleanup(text: str):
+        if not text:
+            return None
+
+        t = text.strip()
+        if len(t) < 4:
+            return None
+
+        low = t.lower()
+        if low in ["дякую", "дякую!", "ок", "ок!", "спс", "гарного дня", "хорошого дня"]:
+            return None
+
+        return t
+
+    # 🚀 НАБАГАТО ШВИДШЕ, ніж +=
+    lines = []
+    append = lines.append
+
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
-        chat = entry["chat_transcript"]
-        full_text_to_analyze += f"=== CASE_ID: {case_id} ===\n"
-        for msg in chat:
+        append(f"=== CASE_ID: {case_id} ===")
+
+        for msg in entry["chat_transcript"]:
             role = "Клієнт" if msg.get("role") == "client" else "Агент"
-            full_text_to_analyze += f"{role}: {msg.get('text')}\n"
-        full_text_to_analyze += "\n"
+
+            cleaned = cleanup(msg.get("text"))
+            if cleaned:
+                append(f"{role}: {cleaned}")
+
+        append("")  # пустий рядок між кейсами
+
+    full_text_to_analyze = "\n".join(lines)
 
     prompt = f"""
-            Ти — суворий QA-інженер. Проаналізуй діалоги та поверни JSON-масив.
+            Ти — суворий QA-інженер з контролю якості клієнтської підтримки. 
+            Проаналізуй надані діалоги та поверни результат ВИКЛЮЧНО у форматі JSON-масиву.
 
-            ДІАЛОГИ: {full_text_to_analyze}
+            ДІАЛОГИ ДЛЯ АНАЛІЗУ:
+            {full_text_to_analyze}
 
-            ВАЖЛИВО: У полі 'agent_mistakes' використовуй ТІЛЬКИ ці назви (якщо помилка є):
-            - "ignored_question"
-            - "incorrect_info" 
-            - "no_resolution"
-            - "template_responses"
-            - "failed_to_help"
+            ПРАВИЛА АНАЛІЗУ:
+            1. "intent": Коротко опиши суть звернення клієнта англійською мовою.
+            2. "satisfaction": Використовуй ТІЛЬКИ: "Unsatisfied", "Neutral", "Satisfied", "Very satisfied".
+               - Якщо проблема не вирішена, але клієнт ввічливо прощається — став "Neutral".
+            3. "quality_score": Оцінка від 1 до 5. Будь суворим. Став 5 лише за ідеальну роботу.
+            4. "agent_mistakes": Масив ТІЛЬКИ з таких значень (якщо помилок немає, залиш порожнім []):
+               - "ignored_question" (агент пропустив питання клієнта)
+               - "incorrect_info" (надано хибну інформацію)
+               - "no_resolution" (проблема клієнта залишилася невирішеною)
+               - "template_responses" (забагато скриптів, немає живої розмови)
+               - "failed_to_help" (загальна некомпетентність або грубість)
 
-            Особливо зверни увагу на CASE_ID: CS009 та CS004. 
-            У CS009, якщо проблема з кнопкою не вирішена (агент просто дав відписку) — ОБОВ'ЯЗКОВО додай "no_resolution".
-            У CS004, якщо агент був грубим або не допоміг — додай "failed_to_help".
+            ВАЖЛИВО: Поверни тільки чистий JSON без markdown-розмітки (без ```json).
 
-            ФОРМАТ: [{{ "case_id": "...", "analysis": {{ "intent": "...", "satisfaction": "...", "quality_score": 5, "agent_mistakes": [] }} }}]
+            ФОРМАТ: [
+              {{
+                "case_id": "...",
+                "analysis": {{
+                  "intent": "...",
+                  "satisfaction": "...",
+                  "quality_score": 5,
+                  "agent_mistakes": []
+                }}
+              }}
+            ]
         """
 
     try:
-
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=prompt,
@@ -104,6 +142,7 @@ def main(input_filename='support_dataset.json'):
         print(f"❌ Файл {input_filename} не знайдено!")
         return
 
+    # швидший json load
     with open(input_path, 'r', encoding='utf-8') as f:
         dataset = json.load(f)
 
@@ -115,11 +154,15 @@ def main(input_filename='support_dataset.json'):
         return
 
     print("⚖️ Застосування бізнес-правил та розрахунок штрафів...")
+
     final_reports = []
+    append_result = final_reports.append
+
     for item in raw_results:
         final_data = recompute_metrics(item)
-        final_reports.append(final_data)
+        append_result(final_data)
 
+        # збереження кожного файлу
         with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=4)
 
