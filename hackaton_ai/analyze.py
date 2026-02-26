@@ -19,7 +19,7 @@ RULES = {
     'incorrect_info': -2,
     'no_resolution': -2,
     'template_responses': -1,
-    'failed_to_help': -1
+    'failed_to_help': -3
 }
 
 
@@ -122,6 +122,8 @@ def recompute_metrics(case_data):
         final_sat = "unsatisfied"
     elif final_score >= 4:
         final_sat = "satisfied"
+    elif final_score == 3:
+        final_sat = "neutral"
 
     return {
         "case_id": case_data.get("case_id"),
