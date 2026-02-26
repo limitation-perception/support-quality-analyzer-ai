@@ -1,13 +1,20 @@
 import subprocess
 import sys
 import time
+from pathlib import Path
+
+# Визначаємо шлях до папки, де лежить цей скрипт
+current_dir = Path(__file__).parent.absolute()
 
 
 def run_script(script_name):
+    # Формуємо повний шлях до скрипта
+    script_path = current_dir / script_name
     print(f"\n--- Запуск {script_name} ---")
+
     try:
         # Запускаємо скрипт і чекаємо на його завершення
-        result = subprocess.run([sys.executable, script_name], check=True)
+        subprocess.run([sys.executable, str(script_path)], check=True)
         return True
     except subprocess.CalledProcessError as e:
         print(f"❌ Помилка при виконанні {script_name}: {e}")
@@ -15,23 +22,24 @@ def run_script(script_name):
 
 
 def main():
-    # 1. Генерація датасету
+    # 1. Генерація датасету (створює support_dataset.json)
     if not run_script("generate.py"):
+        print("🛑 Зупинка: Помилка на етапі генерації.")
         return
 
-    # 2. Аналіз через ШІ (тут ми робимо паузу, щоб не зловити ліміти)
-    print("⏳ Очікування 30 секунд для відновлення лімітів API...")
-    time.sleep(30)
+    # 2. Пауза для запису файлу та відновлення квот API
+    # Оскільки ліміти RPD у тебе критичні (24/20), 45 секунд — безпечніший варіант
+    print("⏳ Очікування 45 секунд для стабілізації лімітів API...")
+    time.sleep(45)
 
+    # 3. Аналіз та Тестування (Об'єднаний скрипт)
+    # Тепер він сам робить і запит до Gemini, і розрахунок штрафів
     if not run_script("analyze.py"):
-        return
-
-    # 3. Валідація та фінальна оцінка (твій новий test.py)
-    if not run_script("test.py"):
+        print("🛑 Зупинка: Помилка на етапі аналізу та валідації.")
         return
 
     print("\n✅ УСІ ЕТАПИ ЗАВЕРШЕНО УСПІШНО!")
-    print("Результати в папці 'output' та файл 'analyzed_results.json' готові.")
+    print(f"📁 Результати перевірено та збережено в папці: {current_dir / 'output'}")
 
 
 if __name__ == "__main__":
