@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# 1. НАЛАШТУВАННЯ ТА ЗАВАНТАЖЕННЯ КЛЮЧІВ
 current_dir = Path(__file__).parent.absolute()
 load_dotenv(current_dir.parent / '.env')
 
@@ -16,7 +15,6 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Правила для штрафів з твого test.py
 RULES = {
     'ignored_question': -2,
     'incorrect_info': -2,
@@ -26,7 +24,6 @@ RULES = {
 }
 
 
-# --- ЕТАП 1: АНАЛІЗ ЧЕРЕЗ LLM ---
 def analyze_with_llm(dataset):
     full_text_to_analyze = ""
     for entry in dataset:
@@ -58,9 +55,9 @@ def analyze_with_llm(dataset):
         """
 
     try:
-        # ВИПРАВЛЕНО: Використовуємо існуючу модель 2.0-flash
+
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -73,19 +70,15 @@ def analyze_with_llm(dataset):
         return []
 
 
-# --- ЕТАП 2: ВАЛІДАЦІЯ ТА ШТРАФИ (Твій test.py) ---
 def recompute_metrics(case_data):
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
 
-    # Розрахунок штрафу
     penalty = sum(RULES.get(m, 0) for m in mistakes)
     llm_score = analysis.get("quality_score", 3)
 
-    # Фінальний скор (базові 5 мінус штрафи)
     final_score = max(1, min(5, 5 + penalty))
 
-    # Корекція задоволеності
     final_sat = analysis.get("satisfaction", "neutral")
     if final_score <= 2:
         final_sat = "unsatisfied"
@@ -102,13 +95,11 @@ def recompute_metrics(case_data):
     }
 
 
-# --- ГОЛОВНИЙ ПРОЦЕС ---
 def main(input_filename='support_dataset.json'):
     input_path = current_dir / input_filename
     output_dir = current_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
-    # 1. Читаємо вхідні дані
     if not input_path.exists():
         print(f"❌ Файл {input_filename} не знайдено!")
         return
@@ -116,7 +107,6 @@ def main(input_filename='support_dataset.json'):
     with open(input_path, 'r', encoding='utf-8') as f:
         dataset = json.load(f)
 
-    # 2. Отримуємо аналіз від ШІ
     print(f"🧠 Запуск аналізу через Gemini для {len(dataset)} кейсів...")
     raw_results = analyze_with_llm(dataset)
 
@@ -124,18 +114,15 @@ def main(input_filename='support_dataset.json'):
         print("❌ Аналіз не вдався.")
         return
 
-    # 3. Обробляємо кожен кейс правилами з test.py
     print("⚖️ Застосування бізнес-правил та розрахунок штрафів...")
     final_reports = []
     for item in raw_results:
         final_data = recompute_metrics(item)
         final_reports.append(final_data)
 
-        # Зберігаємо індивідуальні JSON в output
         with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=4)
 
-    # 4. Зберігаємо загальний звіт
     with open(current_dir / "final_results.json", "w", encoding="utf-8") as f:
         json.dump(final_reports, f, ensure_ascii=False, indent=4)
 
