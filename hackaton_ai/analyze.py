@@ -1,12 +1,10 @@
 import json
 import os
-import time
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# 1. НАЛАШТУВАННЯ ТА ЗАВАНТАЖЕННЯ КЛЮЧІВ
 current_dir = Path(__file__).parent.absolute()
 load_dotenv(current_dir.parent / '.env')
 
@@ -16,7 +14,6 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Правила для штрафів з твого test.py
 RULES = {
     'ignored_question': -2,
     'incorrect_info': -2,
@@ -26,41 +23,79 @@ RULES = {
 }
 
 
-# --- ЕТАП 1: АНАЛІЗ ЧЕРЕЗ LLM ---
 def analyze_with_llm(dataset):
-    full_text_to_analyze = ""
+
+    # мінімальна чистка повідомлень
+    def cleanup(text: str):
+        if not text:
+            return None
+
+        t = text.strip()
+        if len(t) < 4:
+            return None
+
+        low = t.lower()
+        if low in ["дякую", "дякую!", "ок", "ок!", "спс", "гарного дня", "хорошого дня"]:
+            return None
+
+        return t
+
+    # 🚀 НАБАГАТО ШВИДШЕ, ніж +=
+    lines = []
+    append = lines.append
+
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
-        chat = entry["chat_transcript"]
-        full_text_to_analyze += f"=== CASE_ID: {case_id} ===\n"
-        for msg in chat:
+        append(f"=== CASE_ID: {case_id} ===")
+
+        for msg in entry["chat_transcript"]:
             role = "Клієнт" if msg.get("role") == "client" else "Агент"
-            full_text_to_analyze += f"{role}: {msg.get('text')}\n"
-        full_text_to_analyze += "\n"
+
+            cleaned = cleanup(msg.get("text"))
+            if cleaned:
+                append(f"{role}: {cleaned}")
+
+        append("")  # пустий рядок між кейсами
+
+    full_text_to_analyze = "\n".join(lines)
 
     prompt = f"""
-            Ти — суворий QA-інженер. Проаналізуй діалоги та поверни JSON-масив.
+            Ти — суворий QA-інженер з контролю якості клієнтської підтримки. 
+            Проаналізуй надані діалоги та поверни результат ВИКЛЮЧНО у форматі JSON-масиву.
 
-            ДІАЛОГИ: {full_text_to_analyze}
+            ДІАЛОГИ ДЛЯ АНАЛІЗУ:
+            {full_text_to_analyze}
 
-            ВАЖЛИВО: У полі 'agent_mistakes' використовуй ТІЛЬКИ ці назви (якщо помилка є):
-            - "ignored_question"
-            - "incorrect_info" 
-            - "no_resolution"
-            - "template_responses"
-            - "failed_to_help"
+            ПРАВИЛА АНАЛІЗУ:
+            1. "intent": Коротко опиши суть звернення клієнта англійською мовою.
+            2. "satisfaction": Використовуй ТІЛЬКИ: "Unsatisfied", "Neutral", "Satisfied", "Very satisfied".
+               - Якщо проблема не вирішена, але клієнт ввічливо прощається — став "Neutral".
+            3. "quality_score": Оцінка від 1 до 5. Будь суворим. Став 5 лише за ідеальну роботу.
+            4. "agent_mistakes": Масив ТІЛЬКИ з таких значень (якщо помилок немає, залиш порожнім []):
+               - "ignored_question" (агент пропустив питання клієнта)
+               - "incorrect_info" (надано хибну інформацію)
+               - "no_resolution" (проблема клієнта залишилася невирішеною)
+               - "template_responses" (забагато скриптів, немає живої розмови)
+               - "failed_to_help" (загальна некомпетентність або грубість)
 
-            Особливо зверни увагу на CASE_ID: CS009 та CS004. 
-            У CS009, якщо проблема з кнопкою не вирішена (агент просто дав відписку) — ОБОВ'ЯЗКОВО додай "no_resolution".
-            У CS004, якщо агент був грубим або не допоміг — додай "failed_to_help".
+            ВАЖЛИВО: Поверни тільки чистий JSON без markdown-розмітки (без ```json).
 
-            ФОРМАТ: [{{ "case_id": "...", "analysis": {{ "intent": "...", "satisfaction": "...", "quality_score": 5, "agent_mistakes": [] }} }}]
+            ФОРМАТ: [
+              {{
+                "case_id": "...",
+                "analysis": {{
+                  "intent": "...",
+                  "satisfaction": "...",
+                  "quality_score": 5,
+                  "agent_mistakes": []
+                }}
+              }}
+            ]
         """
 
     try:
-        # ВИПРАВЛЕНО: Використовуємо існуючу модель 2.0-flash
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -73,19 +108,15 @@ def analyze_with_llm(dataset):
         return []
 
 
-# --- ЕТАП 2: ВАЛІДАЦІЯ ТА ШТРАФИ (Твій test.py) ---
 def recompute_metrics(case_data):
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
 
-    # Розрахунок штрафу
     penalty = sum(RULES.get(m, 0) for m in mistakes)
     llm_score = analysis.get("quality_score", 3)
 
-    # Фінальний скор (базові 5 мінус штрафи)
     final_score = max(1, min(5, 5 + penalty))
 
-    # Корекція задоволеності
     final_sat = analysis.get("satisfaction", "neutral")
     if final_score <= 2:
         final_sat = "unsatisfied"
@@ -102,21 +133,19 @@ def recompute_metrics(case_data):
     }
 
 
-# --- ГОЛОВНИЙ ПРОЦЕС ---
 def main(input_filename='support_dataset.json'):
     input_path = current_dir / input_filename
     output_dir = current_dir / "output"
     output_dir.mkdir(exist_ok=True)
 
-    # 1. Читаємо вхідні дані
     if not input_path.exists():
         print(f"❌ Файл {input_filename} не знайдено!")
         return
 
+    # швидший json load
     with open(input_path, 'r', encoding='utf-8') as f:
         dataset = json.load(f)
 
-    # 2. Отримуємо аналіз від ШІ
     print(f"🧠 Запуск аналізу через Gemini для {len(dataset)} кейсів...")
     raw_results = analyze_with_llm(dataset)
 
@@ -124,18 +153,19 @@ def main(input_filename='support_dataset.json'):
         print("❌ Аналіз не вдався.")
         return
 
-    # 3. Обробляємо кожен кейс правилами з test.py
     print("⚖️ Застосування бізнес-правил та розрахунок штрафів...")
+
     final_reports = []
+    append_result = final_reports.append
+
     for item in raw_results:
         final_data = recompute_metrics(item)
-        final_reports.append(final_data)
+        append_result(final_data)
 
-        # Зберігаємо індивідуальні JSON в output
+        # збереження кожного файлу
         with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=4)
 
-    # 4. Зберігаємо загальний звіт
     with open(current_dir / "final_results.json", "w", encoding="utf-8") as f:
         json.dump(final_reports, f, ensure_ascii=False, indent=4)
 
