@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 current_dir = Path(__file__).parent.absolute()
 load_dotenv(current_dir / '.env')
@@ -53,123 +54,154 @@ def analyze_with_llm(dataset):
 
     full_text_to_analyze = "\n".join(lines)
 
-    prompt = f"""
-        You are a Merciless QA Auditor and Data Privacy Expert. 
-        Your goal is to expose failures and ensure PII (Personally Identifiable Information) protection.
-        Analyze the dialogues and return EXCLUSIVELY a JSON array.
+    # --------------------------
+    # 🔥 ADD BATCHING HERE (ONLY CHANGE)
+    # --------------------------
+    BATCH_SIZE = 18000  # safe token-friendly chunk size
 
-        DIALOGUES FOR ANALYSIS:
-        {full_text_to_analyze}
+    def split_text(text, size):
+        return [text[i:i + size] for i in range(0, len(text), size)]
 
-        1. DATA PRIVACY & ANONYMIZATION (CRITICAL):
-           - If you detect real names, phone numbers, emails, or physical addresses in the chat, 
-             you MUST mask them in the "intent" or "analysis" fields using tags like [NAME], [PHONE], [EMAIL].
-           - Do not include raw private data in the final JSON output.
+    chunks = split_text(full_text_to_analyze, BATCH_SIZE)
 
-        2. CRITICAL AUDIT PROTOCOL:
-           - "intent": Map to exactly one: "payment_issues", "technical_errors", "access_to_account", "tariff_questions", "refunds", "other".
-           - "satisfaction": Choose ONLY: "satisfied", "neutral", "unsatisfied".
-           - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
-           - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
+    combined_results = []
 
+    def process_chunk(chunk):
+        prompt = f"""
+            You are a Merciless QA Auditor and Data Privacy Expert. 
+            Your goal is to expose failures and ensure PII (Personally Identifiable Information) protection.
+            Analyze the dialogues and return EXCLUSIVELY a JSON array.
 
-            A) DEFINE WHEN "no_resolution" IS ALLOWED
-            - You may set agent_mistakes "no_resolution" ONLY if the user's request is ACTIONABLE within support scope AND should reasonably be solvable or progressed with concrete next steps in-chat.
-            - ACTIONABLE includes: account access recovery steps, payment/refund handling, technical troubleshooting with diagnostics/workaround, tariff changes, order/shipping/delivery issues.
-            - NON-ACTIONABLE includes: feature requests, product roadmap questions, requests for future ETAs/launch dates, general product suggestions, "will you add X?" questions.
+            DIALOGUES FOR ANALYSIS:
+            {chunk}
 
-            B) SPECIAL RULE: FEATURE REQUEST / ROADMAP / ETA QUESTIONS
-            If the user asks about future functionality or "when will X be added":
-            - Consider the request "resolved" if the agent:
-              1) acknowledges the request,
-              2) confirms it will be recorded/forwarded (or explains how feedback is tracked),
-              3) sets expectation boundaries (e.g., cannot share timelines / no ETA).
-            - In this scenario:
-              - agent_mistakes MUST be [] (unless the agent is rude, ignores the question, or gives incorrect/conflicting info),
-              - satisfaction MUST be "neutral" (NOT "unsatisfied"),
-              - quality_score should be 3-5 depending on clarity and helpfulness.
+            1. DATA PRIVACY & ANONYMIZATION (CRITICAL):
+               - If you detect real names, phone numbers, emails, or physical addresses in the chat, 
+                 you MUST mask them in the "intent" or "analysis" fields using tags like [NAME], [PHONE], [EMAIL].
+               - Do not include raw private data in the final JSON output.
 
-            C) WHEN FEATURE/ROADMAP BECOMES "unsatisfied"
-            For feature/roadmap/ETA cases, set satisfaction = "unsatisfied" ONLY if at least one of these is true:
-            - agent_mistakes includes "ignored_question" OR "rude_tone" OR "incorrect_info".
-            - The agent refuses to help AND provides no alternative (e.g., where to track updates / release notes / feedback channel).
-            IMPORTANT: DO NOT use "no_resolution" for feature/roadmap/ETA by itself.
+            2. CRITICAL AUDIT PROTOCOL:
+               - "intent": Map to exactly one: "payment_issues", "technical_errors", "access_to_account", "tariff_questions", "refunds", "other".
+               - "satisfaction": Choose ONLY: "satisfied", "neutral", "unsatisfied".
+               - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
+               - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
 
-            D) GOLDEN EXAMPLE (MUST MATCH)
-            User: "Чи планується додати функцію групових чатів? Якщо так, то коли?"
-            Agent: "Дякуємо за пропозицію, передали команді розробки. Точні терміни не розголошуємо."
-            => intent: "other"
-            => agent_mistakes: []
-            => satisfaction: "neutral"
-            => quality_score: 4
+                A) DEFINE WHEN "no_resolution" IS ALLOWED
+                - You may set agent_mistakes "no_resolution" ONLY if the user's request is ACTIONABLE within support scope AND should reasonably be solvable or progressed with concrete next steps in-chat.
+                - ACTIONABLE includes: account access recovery steps, payment/refund handling, technical troubleshooting with diagnostics/workaround, tariff changes, order/shipping/delivery issues.
+                - NON-ACTIONABLE includes: feature requests, product roadmap questions, requests for future ETAs/launch dates, general product suggestions, "will you add X?" questions.
 
-        3. SCORING & MISTAKES:
-           - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
-           - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", 
-           "unnecessary_escalation".
-        HIGHEST PRIORITY RULE (INVARIANT): If agent_mistakes contains no_resolution OR incorrect_info OR failed_to_help, then satisfaction MUST be unsatisfied (always, regardless of client gratitude/tone).
-        PROCESS: First decide agent_mistakes, then set satisfaction using the invariant; only if invariant doesn’t trigger, choose neutral/satisfied.
-        VALIDATION: Before output, assert: if no_resolution or incorrect_info present => satisfaction == unsatisfied. If not, fix.
+                B) SPECIAL RULE: FEATURE REQUEST / ROADMAP / ETA QUESTIONS
+                If the user asks about future functionality or "when will X be added":
+                - Consider the request "resolved" if the agent:
+                  1) acknowledges the request,
+                  2) confirms it will be recorded/forwarded (or explains how feedback is tracked),
+                  3) sets expectation boundaries (e.g., cannot share timelines / no ETA).
+                - In this scenario:
+                  - agent_mistakes MUST be [] (unless the agent is rude, ignores the question, or gives incorrect/conflicting info),
+                  - satisfaction MUST be "neutral" (NOT "unsatisfied"),
+                  - quality_score should be 3-5 depending on clarity and helpfulness.
 
-        OUTPUT FORMAT:
-        - Return ONLY raw JSON code. No markdown, no preamble.
-        - Be hyper-critical. If in doubt, choose the LOWER score.
-        - explain for every case why you evaluated all the cases this way
-        ABSOLUTE PRIORITY RULESET (ORDERED OVERRIDES):
+                C) WHEN FEATURE/ROADMAP BECOMES "unsatisfied"
+                For feature/roadmap/ETA cases, set satisfaction = "unsatisfied" ONLY if at least one of these is true:
+                - agent_mistakes includes "ignored_question" OR "rude_tone" OR "incorrect_info".
+                - The agent refuses to help AND provides no alternative (e.g., where to track updates / release notes / feedback channel).
+                IMPORTANT: DO NOT use "no_resolution" for feature/roadmap/ETA by itself.
 
-        OVERRIDE #1 (HIGHEST): FORCED_SATISFIED
-        Set satisfaction = "satisfied" even if agent_mistakes is non-empty ONLY IF the dialogue contains a clear, final confirmation of full resolution AND explicit satisfaction.
-        Allowed evidence must include BOTH:
-          (1) Resolution-confirmation: client explicitly confirms the issue is resolved (e.g., "все працює", "проблему вирішено", "гроші повернули", "швидкість відновилась", "доступ відновлено", "заміну оформили і мене влаштовує").
-          (2) Satisfaction-confirmation: client explicitly expresses satisfaction with the outcome (strong positive, not just politeness).
-        Reject as insufficient: generic "дякую", "ок", "зрозуміло", "гарного дня", "сподіваюсь" without explicit resolution.
+                D) GOLDEN EXAMPLE (MUST MATCH)
+                User: "Чи планується додати функцію групових чатів? Якщо так, то коли?"
+                Agent: "Дякуємо за пропозицію, передали команді розробки. Точні терміни не розголошуємо."
+                => intent: "other"
+                => agent_mistakes: []
+                => satisfaction: "neutral"
+                => quality_score: 4
 
-        OVERRIDE #2: UNSATISFIED_TRIGGER
-        If OVERRIDE #1 did NOT trigger AND agent_mistakes contains ANY of ["no_resolution","incorrect_info","failed_to_help"],
-        THEN satisfaction MUST be "unsatisfied" (regardless of thanks/tone).
+            3. SCORING & MISTAKES:
+               - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
+               - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", 
+               "unnecessary_escalation".
+            HIGHEST PRIORITY RULE (INVARIANT): If agent_mistakes contains no_resolution OR incorrect_info OR failed_to_help, then satisfaction MUST be unsatisfied (always, regardless of client gratitude/tone).
+            PROCESS: First decide agent_mistakes, then set satisfaction using the invariant; only if invariant doesn't trigger, choose neutral/satisfied.
+            VALIDATION: Before output, assert: if no_resolution or incorrect_info present => satisfaction == unsatisfied. If not, fix.
 
-        Otherwise:
-        - If resolved but satisfaction is not explicit => "neutral"
-        - If unresolved => "unsatisfied"
+            OUTPUT FORMAT:
+            - Return ONLY raw JSON code. No markdown, no preamble.
+            - Be hyper-critical. If in doubt, choose the LOWER score.
+            - explain for every case why you evaluated all the cases this way
+            ABSOLUTE PRIORITY RULESET (ORDERED OVERRIDES):
 
-        PROCESS (MANDATORY ORDER):
-        1) Determine agent_mistakes (allowed list only).
-        2) Determine satisfaction using OVERRIDE #1 then OVERRIDE #2.
-        3) quality_score rule stays: if agent_mistakes non-empty => quality_score ≤ 3.
+            OVERRIDE #1 (HIGHEST): FORCED_SATISFIED
+            Set satisfaction = "satisfied" even if agent_mistakes is non-empty ONLY IF the dialogue contains a clear, final confirmation of full resolution AND explicit satisfaction.
+            Allowed evidence must include BOTH:
+              (1) Resolution-confirmation: client explicitly confirms the issue is resolved (e.g., "все працює", "проблему вирішено", "гроші повернули", "швидкість відновилась", "доступ відновлено", "заміну оформили і мене влаштовує").
+              (2) Satisfaction-confirmation: client explicitly expresses satisfaction with the outcome (strong positive, not just politeness).
+            Reject as insufficient: generic "дякую", "ок", "зрозуміло", "гарного дня", "сподіваюсь" without explicit resolution.
 
-        VALIDATION (MUST RUN):
-        For every case:
-        - If OVERRIDE #1 triggered => satisfaction must be "satisfied".
-        - Else if mistakes contain unsatisfied triggers => satisfaction must be "unsatisfied".
-        - Fix and re-validate before output.
+            OVERRIDE #2: UNSATISFIED_TRIGGER
+            If OVERRIDE #1 did NOT trigger AND agent_mistakes contains ANY of ["no_resolution","incorrect_info","failed_to_help"],
+            THEN satisfaction MUST be "unsatisfied" (regardless of thanks/tone).
 
-        FORMAT: [
-          {{
-            "case_id": "...",
-            "analysis": {{
-              "intent": "...",
-              "satisfaction": "...",
-              "quality_score": 0,
-              "agent_mistakes": []
-              "explanation": "..."
-            }}
-          }}
-        ]
-    """
+            Otherwise:
+            - If resolved but satisfaction is not explicit => "neutral"
+            - If unresolved => "unsatisfied"
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.0
+            PROCESS (MANDATORY ORDER):
+            1) Determine agent_mistakes (allowed list only).
+            2) Determine satisfaction using OVERRIDE #1 then OVERRIDE #2.
+            3) quality_score rule stays: if agent_mistakes non-empty => quality_score ≤ 3.
+
+            VALIDATION (MUST RUN):
+            For every case:
+            - If OVERRIDE #1 triggered => satisfaction must be "satisfied".
+            - Else if mistakes contain unsatisfied triggers => satisfaction must be "unsatisfied".
+            - Fix and re-validate before output.
+
+            FORMAT: [
+              {{
+                "case_id": "...",
+                "analysis": {{
+                  "intent": "...",
+                  "satisfaction": "...",
+                  "quality_score": 0,
+                  "agent_mistakes": []
+                  "explanation": "..."
+                }}
+              }}
+            ]
+        """
+
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
             )
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        print(f"❌ Помилка API: {e}")
-        return []
+            return json.loads(response.text)
+        except Exception as e:
+            print(f"❌ Помилка API: {e}")
+            return []
+
+    # Run all chunks in parallel
+    chunk_results: list[list] = [[] for _ in chunks]
+    with ThreadPoolExecutor(max_workers=min(len(chunks), 8)) as executor:
+        future_to_index = {executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)}
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            result = future.result() or []
+            chunk_results[index] = result
+            print(f"✅ Chunk {index + 1}/{len(chunks)} завершено ({len(result)} кейсів)")
+
+    for result in chunk_results:
+        if result:
+            combined_results.extend(result)
+
+    return combined_results
+    # --------------------------
+    # END OF BATCHING CHANGE
+    # --------------------------
 
 
 def recompute_metrics(case_data):
@@ -209,10 +241,6 @@ def recompute_metrics(case_data):
 
 
 def rotate_existing_file(path: Path) -> None:
-    """
-    If `path` exists, rename it to path stem + _{N} + suffix, where N is 1..∞ first free.
-    Prints rename action.
-    """
     if not path.exists():
         return
 
@@ -258,7 +286,6 @@ def main(input_filename='support_dataset.json', rotate=False):
         final_data = recompute_metrics(item)
         append_result(final_data)
 
-        # saving every file
         case_path = output_dir / f"{final_data['case_id']}.json"
         if rotate:
             rotate_existing_file(case_path)
@@ -277,5 +304,4 @@ def main(input_filename='support_dataset.json', rotate=False):
 
 
 if __name__ == "__main__":
-    # Щоб увімкнути ротацію (збереження копій), змініть на main(rotate=True)
     main(rotate=False)
