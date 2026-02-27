@@ -1,6 +1,6 @@
 # support-quality-analyzer-ai
 ## Project Overview:
-###### This project demonstrates an end-to-end pipeline that uses an LLM (gemini-2.5-flash-lite) to:
+### This project demonstrates an end-to-end pipeline that uses an LLM (gemini-2.5-flash-lite) to:
 + Generate synthetic customer–support conversations (generate.py)
     
 + Analyze conversation quality using a hybrid approach:
