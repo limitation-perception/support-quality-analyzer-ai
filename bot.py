@@ -3,6 +3,7 @@ import json
 import telebot
 from dotenv import load_dotenv
 from pathlib import Path
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # Імпортуємо твої функції
 from analyze import analyze_with_llm, recompute_metrics 
@@ -68,10 +69,18 @@ def process_dataset(chat_id, dataset, status_msg_id):
 def send_welcome(message):
     welcome_text = (
         "👋 Привіт! Я бот-QA. У мене є дві опції:\n\n"
-        "1️⃣ <b>Відправ мені файл</b> <code>support_dataset.json</code>, і я його проаналізую.\n"
-        "2️⃣ <b>Напиши команду</b> /generate — я сам згенерую нові діалоги та одразу проведу їхній аналіз."
+        "1️⃣ <b>Відправ мені файл типу</b> <code>.json</code> (приклад: <code>support_dataset.json</code>), і я його проаналізую.\n"
+        "2️⃣ <b>Натисни кнопку меню generate</b> — я сам згенерую нові діалоги та одразу проведу їхній аналіз."
     )
-    bot.reply_to(message, welcome_text, parse_mode="HTML")
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
+
+    btn_start = KeyboardButton("/start")
+    markup.add(btn_start)
+
+    btn_generate = KeyboardButton("/generate")
+    markup.add(btn_generate)
+
+    bot.reply_to(message, welcome_text, parse_mode="HTML", reply_markup=markup)
 
 
 @bot.message_handler(commands=['generate'])
