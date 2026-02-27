@@ -20,12 +20,12 @@
 + using Telegram-bot.
 
 ## Architecture:
-generate.py        → generates support_dataset.json
-analyze.py         → evaluates conversations via Gemini
-run_all.py         → runs full pipeline locally
-bot.py             → Telegram interface
-output/            → per-case analysis results
-final_results.json → aggregated report
++ generate.py        → generates support_dataset.json
++ analyze.py         → evaluates conversations via Gemini
++ run_all.py         → runs full pipeline locally
++ bot.py             → Telegram interface
++ output/            → per-case analysis results
++ final_results.json → aggregated report
 ## Requirements:
 
 + Python 3.10+
@@ -42,8 +42,8 @@ final_results.json → aggregated report
 
 #### Create a .env file in the project root:
 
-API_KEY=your_gemini_api_key
-TELEGRAM_TOKEN=your_telegram_token
++ API_KEY=your_gemini_api_key
++ TELEGRAM_TOKEN=your_telegram_token (optional)
 ## Installation
 
 #### Clone repository and install dependencies:
