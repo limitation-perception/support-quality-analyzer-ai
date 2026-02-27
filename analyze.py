@@ -21,7 +21,7 @@ rules = {
     'no_resolution': -3,
     'unnecessary_escalation': -1
 }
-needed_fields = {"id", "intent", "satisfaction",  "quality_score", "agent_mistakes"}
+needed_fields = {"id", "intent", "satisfaction", "quality_score", "agent_mistakes"}
 
 
 def analyze_with_llm(dataset):
@@ -36,7 +36,7 @@ def analyze_with_llm(dataset):
         return t
 
     lines = []
-    append = lines.append 
+    append = lines.append
 
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
@@ -72,13 +72,76 @@ def analyze_with_llm(dataset):
            - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
            - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
 
+
+            A) DEFINE WHEN "no_resolution" IS ALLOWED
+            - You may set agent_mistakes "no_resolution" ONLY if the user's request is ACTIONABLE within support scope AND should reasonably be solvable or progressed with concrete next steps in-chat.
+            - ACTIONABLE includes: account access recovery steps, payment/refund handling, technical troubleshooting with diagnostics/workaround, tariff changes, order/shipping/delivery issues.
+            - NON-ACTIONABLE includes: feature requests, product roadmap questions, requests for future ETAs/launch dates, general product suggestions, "will you add X?" questions.
+
+            B) SPECIAL RULE: FEATURE REQUEST / ROADMAP / ETA QUESTIONS
+            If the user asks about future functionality or "when will X be added":
+            - Consider the request "resolved" if the agent:
+              1) acknowledges the request,
+              2) confirms it will be recorded/forwarded (or explains how feedback is tracked),
+              3) sets expectation boundaries (e.g., cannot share timelines / no ETA).
+            - In this scenario:
+              - agent_mistakes MUST be [] (unless the agent is rude, ignores the question, or gives incorrect/conflicting info),
+              - satisfaction MUST be "neutral" (NOT "unsatisfied"),
+              - quality_score should be 3-5 depending on clarity and helpfulness.
+
+            C) WHEN FEATURE/ROADMAP BECOMES "unsatisfied"
+            For feature/roadmap/ETA cases, set satisfaction = "unsatisfied" ONLY if at least one of these is true:
+            - agent_mistakes includes "ignored_question" OR "rude_tone" OR "incorrect_info".
+            - The agent refuses to help AND provides no alternative (e.g., where to track updates / release notes / feedback channel).
+            IMPORTANT: DO NOT use "no_resolution" for feature/roadmap/ETA by itself.
+
+            D) GOLDEN EXAMPLE (MUST MATCH)
+            User: "Чи планується додати функцію групових чатів? Якщо так, то коли?"
+            Agent: "Дякуємо за пропозицію, передали команді розробки. Точні терміни не розголошуємо."
+            => intent: "other"
+            => agent_mistakes: []
+            => satisfaction: "neutral"
+            => quality_score: 4
+
         3. SCORING & MISTAKES:
            - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
-           - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", "unnecessary_escalation".
+           - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", 
+           "unnecessary_escalation".
+        HIGHEST PRIORITY RULE (INVARIANT): If agent_mistakes contains no_resolution OR incorrect_info OR failed_to_help, then satisfaction MUST be unsatisfied (always, regardless of client gratitude/tone).
+        PROCESS: First decide agent_mistakes, then set satisfaction using the invariant; only if invariant doesn’t trigger, choose neutral/satisfied.
+        VALIDATION: Before output, assert: if no_resolution or incorrect_info present => satisfaction == unsatisfied. If not, fix.
 
         OUTPUT FORMAT:
         - Return ONLY raw JSON code. No markdown, no preamble.
         - Be hyper-critical. If in doubt, choose the LOWER score.
+        - explain for every case why you evaluated all the cases this way
+        ABSOLUTE PRIORITY RULESET (ORDERED OVERRIDES):
+
+        OVERRIDE #1 (HIGHEST): FORCED_SATISFIED
+        Set satisfaction = "satisfied" even if agent_mistakes is non-empty ONLY IF the dialogue contains a clear, final confirmation of full resolution AND explicit satisfaction.
+        Allowed evidence must include BOTH:
+          (1) Resolution-confirmation: client explicitly confirms the issue is resolved (e.g., "все працює", "проблему вирішено", "гроші повернули", "швидкість відновилась", "доступ відновлено", "заміну оформили і мене влаштовує").
+          (2) Satisfaction-confirmation: client explicitly expresses satisfaction with the outcome (strong positive, not just politeness).
+        Reject as insufficient: generic "дякую", "ок", "зрозуміло", "гарного дня", "сподіваюсь" without explicit resolution.
+
+        OVERRIDE #2: UNSATISFIED_TRIGGER
+        If OVERRIDE #1 did NOT trigger AND agent_mistakes contains ANY of ["no_resolution","incorrect_info","failed_to_help"],
+        THEN satisfaction MUST be "unsatisfied" (regardless of thanks/tone).
+
+        Otherwise:
+        - If resolved but satisfaction is not explicit => "neutral"
+        - If unresolved => "unsatisfied"
+
+        PROCESS (MANDATORY ORDER):
+        1) Determine agent_mistakes (allowed list only).
+        2) Determine satisfaction using OVERRIDE #1 then OVERRIDE #2.
+        3) quality_score rule stays: if agent_mistakes non-empty => quality_score ≤ 3.
+
+        VALIDATION (MUST RUN):
+        For every case:
+        - If OVERRIDE #1 triggered => satisfaction must be "satisfied".
+        - Else if mistakes contain unsatisfied triggers => satisfaction must be "unsatisfied".
+        - Fix and re-validate before output.
 
         FORMAT: [
           {{
@@ -88,6 +151,7 @@ def analyze_with_llm(dataset):
               "satisfaction": "...",
               "quality_score": 0,
               "agent_mistakes": []
+              "explanation": "..."
             }}
           }}
         ]
@@ -95,14 +159,14 @@ def analyze_with_llm(dataset):
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
+            model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.0
             )
         )
-        return json.loads(response.text) 
+        return json.loads(response.text)
     except Exception as e:
         print(f"❌ Помилка API: {e}")
         return []
@@ -115,7 +179,7 @@ def recompute_metrics(case_data):
     if len(missing) == 0:
         valid = "ok"
     else:
-        valid =  "was fixed"
+        valid = "was fixed"
 
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
@@ -140,11 +204,33 @@ def recompute_metrics(case_data):
         "final_score": final_score,
         "final_satisfaction": final_sat,
         "mistakes": mistakes,
-        "evaluation_status":  valid
+        "evaluation_status": valid
     }
 
 
-def main(input_filename='support_dataset.json'):
+def rotate_existing_file(path: Path) -> None:
+    """
+    If `path` exists, rename it to path stem + _{N} + suffix, where N is 1..∞ first free.
+    Prints rename action.
+    """
+    if not path.exists():
+        return
+
+    parent = path.parent
+    stem = path.stem
+    suffix = path.suffix
+
+    n = 1
+    while True:
+        candidate = parent / f"{stem}_{n}{suffix}"
+        if not candidate.exists():
+            path.rename(candidate)
+            print(f"🗂️  Existing file rotated: {path.name} -> {candidate.name}")
+            return
+        n += 1
+
+
+def main(input_filename='support_dataset.json', rotate=False):
     input_path = current_dir / input_filename
     output_dir = current_dir / "output"
     output_dir.mkdir(exist_ok=True)
@@ -173,14 +259,23 @@ def main(input_filename='support_dataset.json'):
         append_result(final_data)
 
         # saving every file
-        with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
-            json.dump(final_data, f, ensure_ascii=False, indent=4)     
+        case_path = output_dir / f"{final_data['case_id']}.json"
+        if rotate:
+            rotate_existing_file(case_path)
 
-    with open(current_dir / "final_results.json", "w", encoding="utf-8") as f:
-        json.dump(final_reports, f, ensure_ascii=False, indent=4)             
+        with open(case_path, "w", encoding="utf-8") as f:
+            json.dump(final_data, f, ensure_ascii=False, indent=4)
 
-    print(f"✅ Готово! Результати збережено в 'output' та 'final_results.json'")
+    final_path = current_dir / "final_results.json"
+    if rotate:
+        rotate_existing_file(final_path)
+
+    with open(final_path, "w", encoding="utf-8") as f:
+        json.dump(final_reports, f, ensure_ascii=False, indent=4)
+
+    print("✅ Готово! Результати збережено в 'output' та 'final_results.json'")
 
 
 if __name__ == "__main__":
-    main()
+    # Щоб увімкнути ротацію (збереження копій), змініть на main(rotate=True)
+    main(rotate=False)
