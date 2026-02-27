@@ -65,7 +65,7 @@ def generate_all_chats(test_cases):
         return []
 
 def main():
-    test_cases = [
+    test_cases = [      # А можна це передати з файлу???
       {
         "case_id": "CS001",
         "theme": "Технічна проблема: Вхід до системи",

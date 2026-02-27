@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 # Імпортуємо твої функції
-from analyze import analyze_with_llm, recompute_metrics
+from analyze import analyze_with_llm, recompute_metrics # Є проблеми з цілим файлом??????
 import generate  # Імпортуємо твій файл генерації
 
 # Завантажуємо змінні середовища

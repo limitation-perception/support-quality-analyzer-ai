@@ -14,7 +14,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-RULES = {
+rules = {
     'ignored_question': -2,
     'incorrect_info': -2,
     'no_resolution': -2,
@@ -35,14 +35,14 @@ def analyze_with_llm(dataset):
             return None
 
         low = t.lower()
-        if low in ["дякую", "дякую!", "ок", "ок!", "спс", "гарного дня", "хорошого дня"]:
+        if low in ["дякую", "дякую!", "ок", "ок!", "спс", "гарного дня", "хорошого дня"]: #?????????
             return None
 
         return t
 
     # 🚀 НАБАГАТО ШВИДШЕ, ніж +=
     lines = []
-    append = lines.append
+    append = lines.append # ?????????
 
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
@@ -102,7 +102,7 @@ def analyze_with_llm(dataset):
                 temperature=0.0
             )
         )
-        return json.loads(response.text)
+        return json.loads(response.text) #????????
     except Exception as e:
         print(f"❌ Помилка API: {e}")
         return []
@@ -112,7 +112,7 @@ def recompute_metrics(case_data):
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
 
-    penalty = sum(RULES.get(m, 0) for m in mistakes)
+    penalty = sum(rules.get(m, 0) for m in mistakes)
     llm_score = analysis.get("quality_score", 3)
 
     final_score = max(1, min(5, 5 + penalty))
@@ -166,10 +166,10 @@ def main(input_filename='support_dataset.json'):
 
         # збереження кожного файлу
         with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
-            json.dump(final_data, f, ensure_ascii=False, indent=4)
+            json.dump(final_data, f, ensure_ascii=False, indent=4)     
 
     with open(current_dir / "final_results.json", "w", encoding="utf-8") as f:
-        json.dump(final_reports, f, ensure_ascii=False, indent=4)
+        json.dump(final_reports, f, ensure_ascii=False, indent=4)             # Чим відрізняються оці два файла??7
 
     print(f"✅ Готово! Результати збережено в 'output' та 'final_results.json'")
 
