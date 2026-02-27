@@ -1,23 +1,23 @@
 # support-quality-analyzer-ai
 ## Project Overview:
-### This project demonstrates an end-to-end pipeline that uses an LLM (gemini-2.5-flash-lite) to:
+#### This project demonstrates an end-to-end pipeline that uses an LLM (gemini-2.5-flash-lite) to:
 + Generate synthetic customer–support conversations (generate.py)
     
 + Analyze conversation quality using a hybrid approach:
 1. LLM reasoning
 2. Rule-based scoring (analyze.py)
 
-The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
+####The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
 
-The pipeline can be executed:
+####The pipeline can be executed:
 
-manually (step-by-step),
++ manually (step-by-step),
 
-automatically via run_all.py,
++ automatically via run_all.py,
 
-inside Docker,
++ inside Docker,
 
-using Telegram-bot.
++ using Telegram-bot.
 
 🏗 Architecture:
 generate.py        → generates support_dataset.json
