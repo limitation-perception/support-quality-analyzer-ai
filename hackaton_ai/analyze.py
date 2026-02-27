@@ -17,10 +17,11 @@ client = genai.Client(api_key=api_key)
 rules = {
     'ignored_question': -2,
     'incorrect_info': -2,
-    'no_resolution': -2,
-    'template_responses': -1,
-    'failed_to_help': -3
+    'rude_tone': -1,
+    'no_resolution': -3,
+    'unnecessary_escalation': -1
 }
+needed_fields = {"id", "intent", "satisfaction",  "quality_score", "agent_mistakes"}
 
 
 def analyze_with_llm(dataset):
@@ -34,15 +35,11 @@ def analyze_with_llm(dataset):
         if len(t) < 4:
             return None
 
-        low = t.lower()
-        if low in ["дякую", "дякую!", "ок", "ок!", "спс", "гарного дня", "хорошого дня"]: #?????????
-            return None
-
         return t
 
     # 🚀 НАБАГАТО ШВИДШЕ, ніж +=
     lines = []
-    append = lines.append # ?????????
+    append = lines.append 
 
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
@@ -102,13 +99,21 @@ def analyze_with_llm(dataset):
                 temperature=0.0
             )
         )
-        return json.loads(response.text) #????????
+        return json.loads(response.text) 
     except Exception as e:
         print(f"❌ Помилка API: {e}")
         return []
 
 
 def recompute_metrics(case_data):
+    actual_fields = {"id" if k == "case_id" else k for k in case_data.keys()}
+    actual_fields.update(case_data.get('analysis', {}).keys())
+    missing = needed_fields - actual_fields
+    if len(missing) == 0:
+        valid = "ok"
+    else:
+        valid =  "was fixed"
+
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
 
@@ -131,7 +136,8 @@ def recompute_metrics(case_data):
         "llm_score": llm_score,
         "final_score": final_score,
         "final_satisfaction": final_sat,
-        "mistakes": mistakes
+        "mistakes": mistakes,
+        "evaluation_status":  valid
     }
 
 
@@ -169,7 +175,7 @@ def main(input_filename='support_dataset.json'):
             json.dump(final_data, f, ensure_ascii=False, indent=4)     
 
     with open(current_dir / "final_results.json", "w", encoding="utf-8") as f:
-        json.dump(final_reports, f, ensure_ascii=False, indent=4)             # Чим відрізняються оці два файла??7
+        json.dump(final_reports, f, ensure_ascii=False, indent=4)             
 
     print(f"✅ Готово! Результати збережено в 'output' та 'final_results.json'")
 
