@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 current_dir = Path(__file__).parent.absolute()
-load_dotenv(current_dir.parent / '.env')
+load_dotenv(current_dir / '.env')
 
 api_key = os.getenv("API_KEY")
 if not api_key:
@@ -25,8 +25,6 @@ needed_fields = {"id", "intent", "satisfaction",  "quality_score", "agent_mistak
 
 
 def analyze_with_llm(dataset):
-
-    # мінімальна чистка повідомлень
     def cleanup(text: str):
         if not text:
             return None
@@ -37,7 +35,6 @@ def analyze_with_llm(dataset):
 
         return t
 
-    # 🚀 НАБАГАТО ШВИДШЕ, ніж +=
     lines = []
     append = lines.append 
 
@@ -52,43 +49,49 @@ def analyze_with_llm(dataset):
             if cleaned:
                 append(f"{role}: {cleaned}")
 
-        append("")  # пустий рядок між кейсами
+        append("")
 
     full_text_to_analyze = "\n".join(lines)
 
     prompt = f"""
-            Ти — суворий QA-інженер з контролю якості клієнтської підтримки. 
-            Проаналізуй надані діалоги та поверни результат ВИКЛЮЧНО у форматі JSON-масиву.
+        You are a Merciless QA Auditor and Data Privacy Expert. 
+        Your goal is to expose failures and ensure PII (Personally Identifiable Information) protection.
+        Analyze the dialogues and return EXCLUSIVELY a JSON array.
 
-            ДІАЛОГИ ДЛЯ АНАЛІЗУ:
-            {full_text_to_analyze}
+        DIALOGUES FOR ANALYSIS:
+        {full_text_to_analyze}
 
-            ПРАВИЛА АНАЛІЗУ:
-            1. "intent": Коротко опиши суть звернення клієнта англійською мовою.
-            2. "satisfaction": Використовуй ТІЛЬКИ: "Unsatisfied", "Neutral", "Satisfied", "Very satisfied".
-               - Якщо проблема не вирішена, але клієнт ввічливо прощається — став "Neutral".
-            3. "quality_score": Оцінка від 1 до 5. Будь суворим. Став 5 лише за ідеальну роботу.
-            4. "agent_mistakes": Масив ТІЛЬКИ з таких значень (якщо помилок немає, залиш порожнім []):
-               - "ignored_question" (агент пропустив питання клієнта)
-               - "incorrect_info" (надано хибну інформацію)
-               - "no_resolution" (проблема клієнта залишилася невирішеною)
-               - "template_responses" (забагато скриптів, немає живої розмови)
-               - "failed_to_help" (загальна некомпетентність або грубість)
+        1. DATA PRIVACY & ANONYMIZATION (CRITICAL):
+           - If you detect real names, phone numbers, emails, or physical addresses in the chat, 
+             you MUST mask them in the "intent" or "analysis" fields using tags like [NAME], [PHONE], [EMAIL].
+           - Do not include raw private data in the final JSON output.
 
-            ВАЖЛИВО: Поверни тільки чистий JSON без markdown-розмітки (без ```json).
+        2. CRITICAL AUDIT PROTOCOL:
+           - "intent": Map to exactly one: "payment_issues", "technical_errors", "access_to_account", "tariff_questions", "refunds", "other".
+           - "satisfaction": Choose ONLY: "satisfied", "neutral", "unsatisfied".
+           - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
+           - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
 
-            ФОРМАТ: [
-              {{
-                "case_id": "...",
-                "analysis": {{
-                  "intent": "...",
-                  "satisfaction": "...",
-                  "quality_score": 5,
-                  "agent_mistakes": []
-                }}
-              }}
-            ]
-        """
+        3. SCORING & MISTAKES:
+           - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
+           - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", "unnecessary_escalation".
+
+        OUTPUT FORMAT:
+        - Return ONLY raw JSON code. No markdown, no preamble.
+        - Be hyper-critical. If in doubt, choose the LOWER score.
+
+        FORMAT: [
+          {{
+            "case_id": "...",
+            "analysis": {{
+              "intent": "...",
+              "satisfaction": "...",
+              "quality_score": 0,
+              "agent_mistakes": []
+            }}
+          }}
+        ]
+    """
 
     try:
         response = client.models.generate_content(
@@ -150,7 +153,6 @@ def main(input_filename='support_dataset.json'):
         print(f"❌ Файл {input_filename} не знайдено!")
         return
 
-    # швидший json load
     with open(input_path, 'r', encoding='utf-8') as f:
         dataset = json.load(f)
 
@@ -170,7 +172,7 @@ def main(input_filename='support_dataset.json'):
         final_data = recompute_metrics(item)
         append_result(final_data)
 
-        # збереження кожного файлу
+        # saving every file
         with open(output_dir / f"{final_data['case_id']}.json", "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=4)     
 
