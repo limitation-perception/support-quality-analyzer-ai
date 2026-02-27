@@ -4,8 +4,8 @@
 + Generate synthetic customer–support conversations (generate.py)
     
 + Analyze conversation quality using a hybrid approach:
-  -LLM reasoning
-  -Rule-based scoring (analyze.py)
+- LLM reasoning
+- Rule-based scoring (analyze.py)
 
 The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
 
