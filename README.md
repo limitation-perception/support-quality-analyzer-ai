@@ -7,9 +7,9 @@
 1. LLM reasoning
 2. Rule-based scoring (analyze.py)
 
-####The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
+#### The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
 
-####The pipeline can be executed:
+#### The pipeline can be executed:
 
 + manually (step-by-step),
 
@@ -19,70 +19,70 @@
 
 + using Telegram-bot.
 
-🏗 Architecture:
+## Architecture:
 generate.py        → generates support_dataset.json
 analyze.py         → evaluates conversations via Gemini
 run_all.py         → runs full pipeline locally
 bot.py             → Telegram interface
 output/            → per-case analysis results
 final_results.json → aggregated report
-⚙️ Requirements
+## Requirements:
 
-Python 3.10+
++ Python 3.10+
 
-Dependencies from requirements.txt
++ Dependencies from requirements.txt
 
-Google Gemini API Key
++ Google Gemini API Key
 
-Telegram Bot Token (optional, only for bot mode)
++ Telegram Bot Token (optional, only for bot mode)
 
-Docker (optional)
++ Docker (optional)
 
-🔐 Environment Setup
+## Environment Setup
 
-Create a .env file in the project root:
+#### Create a .env file in the project root:
 
 API_KEY=your_gemini_api_key
 TELEGRAM_TOKEN=your_telegram_token
-📦 Installation
+## Installation
 
-Clone repository and install dependencies:
+#### Clone repository and install dependencies:
 
 python -m venv .venv
 .\.venv\Scripts\activate        # Windows
 
 pip install -r requirements.txt
-🚀 Running the Project
-▶️ Option 1 — Manual Execution
+## Running the Project
+### Option 1 — Manual Execution
 
-Generate dataset:
+#### Generate dataset:
 
-python generate.py
++ python generate.py
 
-This creates:
+#### This creates:
 
-support_dataset.json
++ support_dataset.json
 
-Run analysis:
+#### Run analysis:
 
-python analyze.py
++ python analyze.py
 
-Results:
+#### Results:
 
-output/CS001.json
-output/CS002.json
-...
-final_results.json
-▶️ Option 2 — Automatic Pipeline (Recommended)
-python run_all.py
++ output/CS001.json
++ output/CS002.json
++ ...
++ final_results.json
+### Option 2 — Automatic Pipeline (Recommended)
++ python run_all.py
 
-This script:
+#### This script:
 
-Generates dataset
++ Generates dataset
 
-Waits 30 seconds to avoid API rate-limits
++ Waits 30 seconds to avoid API rate-limits
 
-Runs analysis automatically
++ Runs analysis automatically
 
 
 
