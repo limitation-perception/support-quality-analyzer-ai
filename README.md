@@ -59,6 +59,18 @@
 + docker build -t support-qa .
 #### Run container:
 + docker run --env-file .env support-qa
+## Option 4 — Telegram Bot Mode
+#### Run the bot locally:
++ python bot.py
+#### Open thge bot in Telegram:
++ https://t.me/ChatAnalyticBot
+#### Start interaction:
++ /start
+#### The bot allows you to:
++ Upload your own dataset (.json) for analysis
++ Generate new conversations using /generate
++ Receive QA evaluation results directly in Telegram
++ Download the detailed JSON report
 ## Output Description
 + output/{case_id}.json
 #### Contains analysis for each individual case:
