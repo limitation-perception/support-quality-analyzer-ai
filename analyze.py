@@ -1,14 +1,16 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from prompts import get_analyze_prompt
 
 current_dir = Path(__file__).parent.absolute()
-load_dotenv(current_dir / '.env')
+load_dotenv(current_dir / ".env")
 
 api_key = os.getenv("API_KEY")
 if not api_key:
@@ -17,11 +19,11 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 rules = {
-    'ignored_question': -2,
-    'incorrect_info': -2,
-    'rude_tone': -1,
-    'no_resolution': -3,
-    'unnecessary_escalation': -1
+    "ignored_question": -2,
+    "incorrect_info": -2,
+    "rude_tone": -1,
+    "no_resolution": -3,
+    "unnecessary_escalation": -1,
 }
 needed_fields = {"id", "intent", "satisfaction", "quality_score", "agent_mistakes"}
 
@@ -79,12 +81,11 @@ def analyze_with_llm(dataset):
 
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
-                )
+                    response_mime_type="application/json", temperature=0.0
+                ),
             )
             return json.loads(response.text)
         except Exception as e:
@@ -93,12 +94,16 @@ def analyze_with_llm(dataset):
 
     chunk_results: list[list] = [[] for _ in chunks]
     with ThreadPoolExecutor(max_workers=min(len(chunks), 8)) as executor:
-        future_to_index = {executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)}
+        future_to_index = {
+            executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)
+        }
         for future in as_completed(future_to_index):
             index = future_to_index[future]
             result = future.result() or []
             chunk_results[index] = result
-            print(f"✅ Chunk {index + 1}/{len(chunks)} завершено ({len(result)} кейсів)")
+            print(
+                f"✅ Chunk {index + 1}/{len(chunks)} завершено ({len(result)} кейсів)"
+            )
 
     for result in chunk_results:
         if result:
@@ -109,7 +114,7 @@ def analyze_with_llm(dataset):
 
 def recompute_metrics(case_data):
     actual_fields = {"id" if k == "case_id" else k for k in case_data.keys()}
-    actual_fields.update(case_data.get('analysis', {}).keys())
+    actual_fields.update(case_data.get("analysis", {}).keys())
     missing = needed_fields - actual_fields
     if missing:
         valid = "was fixed"
@@ -139,7 +144,7 @@ def recompute_metrics(case_data):
         "final_score": final_score,
         "final_satisfaction": final_sat,
         "mistakes": mistakes,
-        "evaluation_status": valid
+        "evaluation_status": valid,
     }
 
 
@@ -157,7 +162,7 @@ def rotate_existing_file(path: Path) -> None:
         n += 1
 
 
-def main(input_filename='support_dataset.json', rotate=False):
+def main(input_filename="support_dataset.json", rotate=False):
     input_path = current_dir / input_filename
     output_dir = current_dir / "output"
     output_dir.mkdir(exist_ok=True)
@@ -167,17 +172,19 @@ def main(input_filename='support_dataset.json', rotate=False):
         return
 
     # identify filetype
-    if input_path.suffix == '.json':
-        with open(input_path, encoding='utf-8') as f:
+    if input_path.suffix == ".json":
+        with open(input_path, encoding="utf-8") as f:
             dataset = json.load(f)
     else:
         # for .txt files we create the structure for AI
-        with open(input_path, encoding='utf-8') as f:
+        with open(input_path, encoding="utf-8") as f:
             content = f.read()
-            dataset = [{
-                "metadata": {"case_id": "TXT_IMPORT_001"},
-                "chat_transcript": [{"role": "client", "text": content}]
-            }]
+            dataset = [
+                {
+                    "metadata": {"case_id": "TXT_IMPORT_001"},
+                    "chat_transcript": [{"role": "client", "text": content}],
+                }
+            ]
 
     print(f"🧠 Запуск аналізу через Gemini...")
     raw_results = analyze_with_llm(dataset)
@@ -209,4 +216,4 @@ def main(input_filename='support_dataset.json', rotate=False):
 
 if __name__ == "__main__":
     # to test TXT, you can just change the name of the file
-    main(input_filename='support_dataset.json', rotate=False)
+    main(input_filename="support_dataset.json", rotate=False)

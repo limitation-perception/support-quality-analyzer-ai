@@ -1,4 +1,6 @@
 protobuf
+black
+isort
 google-genai>=0.5.0
 python-dotenv>=1.0.0
 pyTelegramBotAPI>=4.15.0

@@ -1,5 +1,6 @@
 import json
 
+
 def get_generation_prompt(test_cases):
     return f"""
     Ти — досвідчений сценарист та експерт зі створення реалістичних датасетів для машинного навчання.
@@ -33,6 +34,7 @@ def get_generation_prompt(test_cases):
       // ... і так для кожного case_id з вхідних даних
     ]
     """
+
 
 def get_analyze_prompt(chunk):
     return f"""
