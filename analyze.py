@@ -53,7 +53,7 @@ def analyze_with_llm(dataset):
 
     chunks = []
     current_chunk = ""
-    MAX_CASES_PER_CHUNK = 10
+    max_cases_per_chunk = 10
 
     count = 0
     for block in case_blocks:
@@ -64,7 +64,7 @@ def analyze_with_llm(dataset):
         current_chunk += formatted_block
         count += 1
 
-        if count >= MAX_CASES_PER_CHUNK:
+        if count >= max_cases_per_chunk:
             chunks.append(current_chunk)
             current_chunk = ""
             count = 0
@@ -111,10 +111,10 @@ def recompute_metrics(case_data):
     actual_fields = {"id" if k == "case_id" else k for k in case_data.keys()}
     actual_fields.update(case_data.get('analysis', {}).keys())
     missing = needed_fields - actual_fields
-    if len(missing) == 0:
-        valid = "ok"
-    else:
+    if missing:
         valid = "was fixed"
+    else:
+        valid = "ok"
 
     analysis = case_data.get("analysis", {})
     mistakes = analysis.get("agent_mistakes", [])
@@ -168,11 +168,11 @@ def main(input_filename='support_dataset.json', rotate=False):
 
     # identify filetype
     if input_path.suffix == '.json':
-        with open(input_path, 'r', encoding='utf-8') as f:
+        with open(input_path, encoding='utf-8') as f:
             dataset = json.load(f)
     else:
         # for .txt files we create the structure for AI
-        with open(input_path, 'r', encoding='utf-8') as f:
+        with open(input_path, encoding='utf-8') as f:
             content = f.read()
             dataset = [{
                 "metadata": {"case_id": "TXT_IMPORT_001"},
