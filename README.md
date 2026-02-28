@@ -52,6 +52,32 @@ pip install -r requirements.txt
 + Generates dataset
 + Waits 30 seconds to avoid API rate-limits
 + Runs analysis automatically
+### Option 3 — Docker Execution
+#### Build container:
++ docker build -t support-qa .
+#### Run container:
++ docker run --env-file .env support-qa
+## Output Description
++ output/{case_id}.json
+#### Contains analysis for each individual case:
+{
+  "case_id": "CS001",
+  "intent": "...",
+  "llm_score": 4,
+  "final_score": 3,
+  "final_satisfaction": "neutral",
+  "mistakes": [...]
+}
++ final_results.json
+#### Aggregated report across all generated conversations.
+#### Useful for analytics, dashboards, or QA reporting.
+## Use Cases
+#### This project can be used for:
++ Support agent QA automation
++ Synthetic dataset generation for ML training
++ LLM evaluation experiments
++ Prompt-driven simulation testing
++ Customer service analytics prototyping
 
 
 
