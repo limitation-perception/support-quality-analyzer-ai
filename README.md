@@ -2,9 +2,9 @@
 ## Project Overview:
 #### This project demonstrates an end-to-end pipeline that uses an LLM (gemini-2.5-flash-lite) to:
 + Generate synthetic customer–support conversations (generate.py)
-+ Analyze conversation quality using a hybrid approach:
++ Analyze conversation quality using a hybrid approach (analyze.py):
 1. LLM reasoning
-2. Rule-based scoring (analyze.py)
+2. Rule-based scoring 
 #### The system produces structured evaluation results in JSON format for each dialogue and an aggregated report for the entire dataset.
 #### The pipeline can be executed:
 + manually (step-by-step),
@@ -18,6 +18,8 @@
 + bot.py             → Telegram interface
 + output/            → per-case analysis results
 + final_results.json → aggregated report
++ prompts.py         → Centralized prompt templates for generation and analysis
++ scenarios.json     → Definitions of all test scenarios used for dataset creation
 ## Requirements:
 + Python 3.10+
 + Dependencies from requirements.txt
@@ -32,7 +34,7 @@
 #### Clone repository and install dependencies:
 + python -m venv .venv
 + .\.venv\Scripts\activate        # Windows
-pip install -r requirements.txt
++ pip install -r requirements.txt
 ## Running the Project
 ### Option 1 — Manual Execution
 #### Generate dataset:
