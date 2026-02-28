@@ -29,9 +29,11 @@ def analyze_with_llm(dataset):
     def cleanup(text: str):
         if not text:
             return None
+
         t = text.strip()
         if len(t) < 4:
             return None
+
         return t
 
     lines = []
@@ -174,10 +176,8 @@ def recompute_metrics(case_data):
     if final_score <= 2:
         final_sat = "unsatisfied"
     elif llm_sat == "satisfied" and final_score < 4:
-
         final_sat = "neutral"
     else:
-
         final_sat = llm_sat
 
     return {
@@ -194,11 +194,7 @@ def recompute_metrics(case_data):
 def rotate_existing_file(path: Path) -> None:
     if not path.exists():
         return
-
-    parent = path.parent
-    stem = path.stem
-    suffix = path.suffix
-
+    parent, stem, suffix = path.parent, path.stem, path.suffix
     n = 1
     while True:
         candidate = parent / f"{stem}_{n}{suffix}"
@@ -218,10 +214,20 @@ def main(input_filename='support_dataset.json', rotate=False):
         print(f"❌ Файл {input_filename} не знайдено!")
         return
 
-    with open(input_path, 'r', encoding='utf-8') as f:
-        dataset = json.load(f)
+    # identify filetype
+    if input_path.suffix == '.json':
+        with open(input_path, 'r', encoding='utf-8') as f:
+            dataset = json.load(f)
+    else:
+        # for .txt files we create the structure for AI
+        with open(input_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            dataset = [{
+                "metadata": {"case_id": "TXT_IMPORT_001"},
+                "chat_transcript": [{"role": "client", "text": content}]
+            }]
 
-    print(f"🧠 Запуск аналізу через Gemini для {len(dataset)} кейсів...")
+    print(f"🧠 Запуск аналізу через Gemini...")
     raw_results = analyze_with_llm(dataset)
 
     if not raw_results:
@@ -229,25 +235,20 @@ def main(input_filename='support_dataset.json', rotate=False):
         return
 
     print("⚖️ Застосування бізнес-правил та розрахунок штрафів...")
-
     final_reports = []
-    append_result = final_reports.append
-
     for item in raw_results:
         final_data = recompute_metrics(item)
-        append_result(final_data)
+        final_reports.append(final_data)
 
         case_path = output_dir / f"{final_data['case_id']}.json"
         if rotate:
             rotate_existing_file(case_path)
-
         with open(case_path, "w", encoding="utf-8") as f:
             json.dump(final_data, f, ensure_ascii=False, indent=4)
 
     final_path = current_dir / "final_results.json"
     if rotate:
         rotate_existing_file(final_path)
-
     with open(final_path, "w", encoding="utf-8") as f:
         json.dump(final_reports, f, ensure_ascii=False, indent=4)
 
@@ -255,4 +256,5 @@ def main(input_filename='support_dataset.json', rotate=False):
 
 
 if __name__ == "__main__":
-    main(rotate=False)
+    # to test TXT, you can just change the name of the file
+    main(input_filename='support_dataset.json', rotate=False)
