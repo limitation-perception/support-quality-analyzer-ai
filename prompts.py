@@ -3,35 +3,35 @@ import json
 
 def get_generation_prompt(test_cases):
     return f"""
-    Ти — досвідчений сценарист та експерт зі створення реалістичних датасетів для машинного навчання.
-    Твоє завдання — згенерувати діалоги між клієнтом (client) та сапорт-агентом (agent) українською мовою для ВСІХ наданих сценаріїв за один раз.
+    You are an experienced screenwriter and an expert in creating realistic datasets for machine learning.
+    Your task is to generate dialogues between a client and a support agent in Ukrainian for ALL provided scenarios at once.
 
-    ПАРАМЕТРИ СЦЕНАРІЇВ (список усіх кейсів):
+    SCENARIO PARAMETERS (list of all cases):
     {json.dumps(test_cases, indent=2, ensure_ascii=False)}
 
-    ЖОРСТКІ ВИМОГИ:
-    1. Діалог має бути максимально природним. Люди в чатах використовують короткі репліки, іноді роблять одруківки або використовують сленг.
-    2. Ідеально виконуй 'agent_specific_instructions' та 'client_specific_instructions' для відповідного кейсу. 
-    3. Якщо вказана "прихована незадоволеність", клієнт має завершити діалог формальною подякою, незважаючи на те, що його проблема НЕ вирішена.
-    4. Кількість реплік у кожному діалозі не повинна перевищувати параметр 'max_turns' конкретного кейсу.
-    5. Для кожного кейсу перша репліка клієнта має базуватися на 'initial_client_prompt'.
-    
-    ФОРМАТ ВИВОДУ:
-    Поверни ВИКЛЮЧНО валідний JSON у такому форматі (це має бути масив об'єктів для кожного кейсу, без markdown-розмітки):
+    STRICT REQUIREMENTS:
+    1. The dialogue must be as natural as possible. People in chats use short replicas, sometimes make typos, or use slang.
+    2. Perfectly follow 'agent_specific_instructions' and 'client_specific_instructions' for the respective case.
+    3. If "hidden dissatisfaction" is specified, the client must end the dialogue with a formal thank you, despite the fact that their problem is NOT resolved.
+    4. The number of replicas in each dialogue should not exceed the 'max_turns' parameter of the specific case.
+    5. For each case, the client's first replica should be based on 'initial_client_prompt'.
+
+    OUTPUT FORMAT:
+    Return EXCLUSIVELY a valid JSON in the following format (it must be an array of objects for each case, without markdown formatting):
     [
       {{
         "case_id": "CS001",
         "chat_transcript": [
-          {{"role": "client", "text": "перша репліка клієнта"}},
-          {{"role": "agent", "text": "відповідь агента"}},
-          {{"role": "client", "text": "наступна репліка"}}
+          {{"role": "client", "text": "client's first replica"}},
+          {{"role": "agent", "text": "agent's response"}},
+          {{"role": "client", "text": "next replica"}}
         ]
       }},
       {{
         "case_id": "CS002",
         "chat_transcript": [ ... ]
       }}
-      // ... і так для кожного case_id з вхідних даних
+      // ... and so on for each case_id from the input data
     ]
     """
 
