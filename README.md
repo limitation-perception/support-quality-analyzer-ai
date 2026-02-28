@@ -92,8 +92,3 @@
 + LLM evaluation experiments
 + Prompt-driven simulation testing
 + Customer service analytics prototyping
-
-
-
-
-
