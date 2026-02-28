@@ -6,9 +6,8 @@ import telebot
 from dotenv import load_dotenv
 from telebot.types import KeyboardButton, ReplyKeyboardMarkup
 
-import generate  # Імпортуємо твій файл генерації
+import generate  
 
-# Імпортуємо твої функції
 from analyze import analyze_with_llm, recompute_metrics
 
 current_dir = Path(__file__).parent.absolute()

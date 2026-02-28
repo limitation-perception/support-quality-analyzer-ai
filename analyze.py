@@ -23,7 +23,7 @@ rules = {
     "incorrect_info": -2,
     "rude_tone": -1,
     "no_resolution": -3,
-    "unnecessary_escalation": -1,
+    "unnecessary_escalation": -1
 }
 needed_fields = {"id", "intent", "satisfaction", "quality_score", "agent_mistakes"}
 
@@ -171,12 +171,10 @@ def main(input_filename="support_dataset.json", rotate=False):
         print(f"❌ Файл {input_filename} не знайдено!")
         return
 
-    # identify filetype
     if input_path.suffix == ".json":
         with open(input_path, encoding="utf-8") as f:
             dataset = json.load(f)
     else:
-        # for .txt files we create the structure for AI
         with open(input_path, encoding="utf-8") as f:
             content = f.read()
             dataset = [
@@ -215,5 +213,4 @@ def main(input_filename="support_dataset.json", rotate=False):
 
 
 if __name__ == "__main__":
-    # to test TXT, you can just change the name of the file
     main(input_filename="support_dataset.json", rotate=False)
