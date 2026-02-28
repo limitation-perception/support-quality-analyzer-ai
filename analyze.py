@@ -169,17 +169,15 @@ def recompute_metrics(case_data):
     llm_score = analysis.get("quality_score", 3)
     final_score = max(1, min(5, 5 + penalty))
 
-    # КРИТИЧНЕ ВИПРАВЛЕННЯ: Тепер ми довіряємо рішенню ШІ щодо задоволеності (llm_sat)
-    # Код більше не покращує статус до "satisfied", якщо ШІ виставив гірший бал.
     llm_sat = analysis.get("satisfaction", "neutral")
 
     if final_score <= 2:
         final_sat = "unsatisfied"
     elif llm_sat == "satisfied" and final_score < 4:
-        # Понижуємо, якщо є серйозні помилки, але ШІ помилково поставив satisfied
+
         final_sat = "neutral"
     else:
-        # В усіх інших випадках залишаємо те, що вирішив твій суворий промпт
+
         final_sat = llm_sat
 
     return {
