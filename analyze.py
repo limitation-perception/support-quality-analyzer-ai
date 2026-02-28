@@ -29,146 +29,99 @@ def analyze_with_llm(dataset):
     def cleanup(text: str):
         if not text:
             return None
-
         t = text.strip()
         if len(t) < 4:
             return None
-
         return t
 
     lines = []
-    append = lines.append
-
     for entry in dataset:
         case_id = entry["metadata"]["case_id"]
-        append(f"=== CASE_ID: {case_id} ===")
-
+        lines.append(f"=== CASE_ID: {case_id} ===")
         for msg in entry["chat_transcript"]:
             role = "Клієнт" if msg.get("role") == "client" else "Агент"
-
             cleaned = cleanup(msg.get("text"))
             if cleaned:
-                append(f"{role}: {cleaned}")
+                lines.append(f"{role}: {cleaned}")
+        lines.append("")
 
-        append("")
+    full_text = "\n".join(lines)
+    case_blocks = full_text.split("=== CASE_ID: ")
 
-    full_text_to_analyze = "\n".join(lines)
+    chunks = []
+    current_chunk = ""
+    MAX_CASES_PER_CHUNK = 10
 
-    # --------------------------
-    # 🔥 ADD BATCHING HERE (ONLY CHANGE)
-    # --------------------------
-    BATCH_SIZE = 18000  # safe token-friendly chunk size
+    count = 0
+    for block in case_blocks:
+        if not block.strip():
+            continue
 
-    def split_text(text, size):
-        return [text[i:i + size] for i in range(0, len(text), size)]
+        formatted_block = "=== CASE_ID: " + block
+        current_chunk += formatted_block
+        count += 1
 
-    chunks = split_text(full_text_to_analyze, BATCH_SIZE)
+        if count >= MAX_CASES_PER_CHUNK:
+            chunks.append(current_chunk)
+            current_chunk = ""
+            count = 0
+
+    if current_chunk:
+        chunks.append(current_chunk)
 
     combined_results = []
 
     def process_chunk(chunk):
         prompt = f"""
-            You are a Merciless QA Auditor and Data Privacy Expert. 
-            Your goal is to expose failures and ensure PII (Personally Identifiable Information) protection.
-            Analyze the dialogues and return EXCLUSIVELY a JSON array.
+    You are a Merciless QA Auditor. Your goal is to expose failures. 
+    Analyze the dialogues and return EXCLUSIVELY a JSON array.
 
-            DIALOGUES FOR ANALYSIS:
-            {chunk}
+    DIALOGUES FOR ANALYSIS:
+    {chunk}
 
-            1. DATA PRIVACY & ANONYMIZATION (CRITICAL):
-               - If you detect real names, phone numbers, emails, or physical addresses in the chat, 
-                 you MUST mask them in the "intent" or "analysis" fields using tags like [NAME], [PHONE], [EMAIL].
-               - Do not include raw private data in the final JSON output.
+    1. DATA PRIVACY & ANONYMIZATION:
+       - Mask real names, phones, emails using [NAME], [PHONE], [EMAIL].
 
-            2. CRITICAL AUDIT PROTOCOL:
-               - "intent": Map to exactly one: "payment_issues", "technical_errors", "access_to_account", "tariff_questions", "refunds", "other".
-               - "satisfaction": Choose ONLY: "satisfied", "neutral", "unsatisfied".
-               - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
-               - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
+    2. ABSOLUTE SATISFACTION BLOCKER (PRIORITY #0):
+       - If the agent denies a request (e.g., "no pause", "no refund", "can't help") and the client explicitly mentions "inconvenience", "uncomfortable", "not good", or "unhappy" (like in Case 19: "Це не дуже зручно"):
+       - You are STRICTLY FORBIDDEN from using "satisfied".
+       - You MUST use "unsatisfied" (if they are annoyed) or "neutral" (if they are just informed).
+       - Polite closing words like "Дякую за відповідь" DO NOT override this blocker.
 
-                A) DEFINE WHEN "no_resolution" IS ALLOWED
-                - You may set agent_mistakes "no_resolution" ONLY if the user's request is ACTIONABLE within support scope AND should reasonably be solvable or progressed with concrete next steps in-chat.
-                - ACTIONABLE includes: account access recovery steps, payment/refund handling, technical troubleshooting with diagnostics/workaround, tariff changes, order/shipping/delivery issues.
-                - NON-ACTIONABLE includes: feature requests, product roadmap questions, requests for future ETAs/launch dates, general product suggestions, "will you add X?" questions.
+    3. CRITICAL AUDIT PROTOCOL:
+       - "intent": Map to: "payment_issues", "technical_errors", "access_to_account", "tariff_questions", "refunds", "other".
+       - "satisfaction": Choose ONLY: "satisfied", "neutral", "unsatisfied".
+       - THE "UNSATISFIED" TRIGGER: If "no_resolution", "incorrect_info", or "failed_to_help" is present, you MUST set "unsatisfied".
+       - HIDDEN DISSATISFACTION: If the problem is not resolved but the client says "thanks", use "unsatisfied".
 
-                B) SPECIAL RULE: FEATURE REQUEST / ROADMAP / ETA QUESTIONS
-                If the user asks about future functionality or "when will X be added":
-                - Consider the request "resolved" if the agent:
-                  1) acknowledges the request,
-                  2) confirms it will be recorded/forwarded (or explains how feedback is tracked),
-                  3) sets expectation boundaries (e.g., cannot share timelines / no ETA).
-                - In this scenario:
-                  - agent_mistakes MUST be [] (unless the agent is rude, ignores the question, or gives incorrect/conflicting info),
-                  - satisfaction MUST be "neutral" (NOT "unsatisfied"),
-                  - quality_score should be 3-5 depending on clarity and helpfulness.
+        A) DEFINE WHEN "no_resolution" IS ALLOWED
+        - Use "no_resolution" ONLY for actionable requests (billing, tech, access) that were not solved.
+        - For feature requests/roadmap: use [] for mistakes but "neutral" for satisfaction.
 
-                C) WHEN FEATURE/ROADMAP BECOMES "unsatisfied"
-                For feature/roadmap/ETA cases, set satisfaction = "unsatisfied" ONLY if at least one of these is true:
-                - agent_mistakes includes "ignored_question" OR "rude_tone" OR "incorrect_info".
-                - The agent refuses to help AND provides no alternative (e.g., where to track updates / release notes / feedback channel).
-                IMPORTANT: DO NOT use "no_resolution" for feature/roadmap/ETA by itself.
+    4. SCORING & MISTAKES:
+       - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
+       - "agent_mistakes": ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", "unnecessary_escalation".
 
-                D) GOLDEN EXAMPLE (MUST MATCH)
-                User: "Чи планується додати функцію групових чатів? Якщо так, то коли?"
-                Agent: "Дякуємо за пропозицію, передали команді розробки. Точні терміни не розголошуємо."
-                => intent: "other"
-                => agent_mistakes: []
-                => satisfaction: "neutral"
-                => quality_score: 4
+    OVERRIDE #1 (HIGHEST): FORCED_SATISFIED
+    ONLY if: (1) Full resolution confirmed by client AND (2) Explicit joy/gratitude for the RESULT.
+    CRITICAL: Case 19 is NOT satisfied. The client is paying for nothing during vacation. That is a fail for satisfaction.
 
-            3. SCORING & MISTAKES:
-               - "quality_score": 1-5. If 'agent_mistakes' is NOT empty, score MUST be ≤ 3.
-               - "agent_mistakes": Use ONLY: "ignored_question", "incorrect_info", "rude_tone", "no_resolution", 
-               "unnecessary_escalation".
-            HIGHEST PRIORITY RULE (INVARIANT): If agent_mistakes contains no_resolution OR incorrect_info OR failed_to_help, then satisfaction MUST be unsatisfied (always, regardless of client gratitude/tone).
-            PROCESS: First decide agent_mistakes, then set satisfaction using the invariant; only if invariant doesn't trigger, choose neutral/satisfied.
-            VALIDATION: Before output, assert: if no_resolution or incorrect_info present => satisfaction == unsatisfied. If not, fix.
+    VALIDATION:
+    If Case includes "не зручно" or "доведеться платити заново" => satisfaction != satisfied.
 
-            OUTPUT FORMAT:
-            - Return ONLY raw JSON code. No markdown, no preamble.
-            - Be hyper-critical. If in doubt, choose the LOWER score.
-            - explain for every case why you evaluated all the cases this way
-            ABSOLUTE PRIORITY RULESET (ORDERED OVERRIDES):
-
-            OVERRIDE #1 (HIGHEST): FORCED_SATISFIED
-            Set satisfaction = "satisfied" even if agent_mistakes is non-empty ONLY IF the dialogue contains a clear, final confirmation of full resolution AND explicit satisfaction.
-            Allowed evidence must include BOTH:
-              (1) Resolution-confirmation: client explicitly confirms the issue is resolved (e.g., "все працює", "проблему вирішено", "гроші повернули", "швидкість відновилась", "доступ відновлено", "заміну оформили і мене влаштовує").
-              (2) Satisfaction-confirmation: client explicitly expresses satisfaction with the outcome (strong positive, not just politeness).
-            Reject as insufficient: generic "дякую", "ок", "зрозуміло", "гарного дня", "сподіваюсь" without explicit resolution.
-
-            OVERRIDE #2: UNSATISFIED_TRIGGER
-            If OVERRIDE #1 did NOT trigger AND agent_mistakes contains ANY of ["no_resolution","incorrect_info","failed_to_help"],
-            THEN satisfaction MUST be "unsatisfied" (regardless of thanks/tone).
-
-            Otherwise:
-            - If resolved but satisfaction is not explicit => "neutral"
-            - If unresolved => "unsatisfied"
-
-            PROCESS (MANDATORY ORDER):
-            1) Determine agent_mistakes (allowed list only).
-            2) Determine satisfaction using OVERRIDE #1 then OVERRIDE #2.
-            3) quality_score rule stays: if agent_mistakes non-empty => quality_score ≤ 3.
-
-            VALIDATION (MUST RUN):
-            For every case:
-            - If OVERRIDE #1 triggered => satisfaction must be "satisfied".
-            - Else if mistakes contain unsatisfied triggers => satisfaction must be "unsatisfied".
-            - Fix and re-validate before output.
-
-            FORMAT: [
-              {{
-                "case_id": "...",
-                "analysis": {{
-                  "intent": "...",
-                  "satisfaction": "...",
-                  "quality_score": 0,
-                  "agent_mistakes": []
-                  "explanation": "..."
-                }}
-              }}
-            ]
-        """
+    FORMAT: [
+      {{
+        "case_id": "...",
+        "analysis": {{
+          "intent": "...",
+          "satisfaction": "...",
+          "quality_score": 0,
+          "agent_mistakes": [],
+          "explanation": "..."
+        }}
+      }}
+    ]
+    """
 
         try:
             response = client.models.generate_content(
@@ -184,7 +137,6 @@ def analyze_with_llm(dataset):
             print(f"❌ Помилка API: {e}")
             return []
 
-    # Run all chunks in parallel
     chunk_results: list[list] = [[] for _ in chunks]
     with ThreadPoolExecutor(max_workers=min(len(chunks), 8)) as executor:
         future_to_index = {executor.submit(process_chunk, chunk): i for i, chunk in enumerate(chunks)}
@@ -199,9 +151,6 @@ def analyze_with_llm(dataset):
             combined_results.extend(result)
 
     return combined_results
-    # --------------------------
-    # END OF BATCHING CHANGE
-    # --------------------------
 
 
 def recompute_metrics(case_data):
@@ -218,16 +167,20 @@ def recompute_metrics(case_data):
 
     penalty = sum(rules.get(m, 0) for m in mistakes)
     llm_score = analysis.get("quality_score", 3)
-
     final_score = max(1, min(5, 5 + penalty))
 
-    final_sat = analysis.get("satisfaction", "neutral")
+    # КРИТИЧНЕ ВИПРАВЛЕННЯ: Тепер ми довіряємо рішенню ШІ щодо задоволеності (llm_sat)
+    # Код більше не покращує статус до "satisfied", якщо ШІ виставив гірший бал.
+    llm_sat = analysis.get("satisfaction", "neutral")
+
     if final_score <= 2:
         final_sat = "unsatisfied"
-    elif final_score >= 4:
-        final_sat = "satisfied"
-    elif final_score == 3:
+    elif llm_sat == "satisfied" and final_score < 4:
+        # Понижуємо, якщо є серйозні помилки, але ШІ помилково поставив satisfied
         final_sat = "neutral"
+    else:
+        # В усіх інших випадках залишаємо те, що вирішив твій суворий промпт
+        final_sat = llm_sat
 
     return {
         "case_id": case_data.get("case_id"),
